@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Login EduSmart</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body class="auth-page">
+  <div class="auth-shell">
+    <section class="auth-side">
+      <div class="brand-badge">EduSmart</div>
+      <h1>Belajar, mengajar, dan mengelola kelas jadi lebih mudah.</h1>
+      <p>Masuk sebagai <strong>guru</strong> atau <strong>siswa</strong> untuk mengakses materi, quiz, kelas, dan progres pembelajaran dalam satu platform.</p>
+
+      <div class="feature-list">
+        <div class="feature-item">
+          <span>📘</span>
+          <div>
+            <strong>Materi rapi dan terstruktur</strong>
+            <p>Modul, video, dan ringkasan pembelajaran tersusun per topik agar mudah dicari.</p>
+          </div>
+        </div>
+        <div class="feature-item">
+          <span>📝</span>
+          <div>
+            <strong>Quiz interaktif</strong>
+            <p>Latihan cepat, evaluasi mingguan, dan hasil belajar dapat dipantau lebih jelas.</p>
+          </div>
+        </div>
+        <div class="feature-item">
+          <span>🏫</span>
+          <div>
+            <strong>Kelas aktif</strong>
+            <p>Pantau jadwal, pengumuman, diskusi, dan aktivitas kelas dalam satu dashboard.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="auth-card-wrap">
+      <div class="card auth-card" id="loginForm">
+        <div class="auth-head">
+          <p class="eyebrow">Selamat datang</p>
+          <h2>Masuk ke EduSmart</h2>
+          <p class="muted">Pilih jenis akun sebelum login ke dashboard.</p>
+        </div>
+
+        <div class="role-switch" id="roleSwitch">
+          <button class="role-btn active" type="button" data-role="siswa" onclick="setRole('siswa')">Siswa</button>
+          <button class="role-btn" type="button" data-role="guru" onclick="setRole('guru')">Guru</button>
+        </div>
+
+        <div class="field">
+          <label>Email</label>
+          <input type="email" id="loginEmail" placeholder="nama@email.com" required>
+        </div>
+
+        <div class="field">
+          <label>Password</label>
+          <div class="password-wrapper">
+            <input type="password" id="loginPass" placeholder="Masukkan password" required>
+            <button class="toggle" type="button" onclick="togglePass('loginPass', this)">👁️</button>
+          </div>
+        </div>
+
+        <button class="btn" onclick="login()">Masuk Sekarang</button>
+        <div class="helper-row">
+          <span id="roleHint">Akses dashboard pembelajaran siswa.</span>
+          <button class="text-btn" type="button" onclick="showRegister()">Buat akun</button>
+        </div>
+      </div>
+
+      <div class="card auth-card hidden" id="registerForm">
+        <div class="auth-head">
+          <p class="eyebrow">Pendaftaran akun</p>
+          <h2>Buat akun baru</h2>
+          <p class="muted">Lengkapi data di bawah ini untuk membuat akun EduSmart.</p>
+        </div>
+
+        <div class="role-switch" id="registerRoleSwitch">
+          <button class="role-btn active" type="button" data-role="siswa" onclick="setRegisterRole('siswa')">Siswa</button>
+          <button class="role-btn active" type="button" data-role="guru" onclick="setRegisterRole('guru')">Guru</button>
+        </div>
+
+        <div class="field">
+          <label>Nama Lengkap</label>
+          <input type="text" id="fullName" placeholder="Nama lengkap Anda" required>
+        </div>
+
+        <div class="field">
+          <label>Email</label>
+          <input type="email" id="registerEmail" placeholder="nama@email.com" required>
+        </div>
+
+        <div class="field">
+          <label>Password baru</label>
+          <div class="password-wrapper">
+            <input 
+              type="password" 
+              id="regPass" 
+              placeholder="Minimal 8 karakter..."
+              minlength="8"
+              pattern="(?=.*[A-Z])(?=.*[0-9])(?=.*[!@#$%^&*()_+\-=\[\]{};':&quot;\\|,.<>\/?]).{8,}"
+              required
+            >
+            <button class="toggle" type="button" onclick="togglePass('regPass', this)">👁️</button>
+          </div>
+          <small id="passHint" style="font-size: 11px; margin-top: 5px; display: block; color: #666;">
+            Wajib: 8+ karakter, Huruf Besar, Angka, & Simbol.
+          </small>
+        </div>
+
+        <div id="errorMsg" class="error-msg" style="color: #ff4d4d; margin-bottom: 10px; min-height: 1.2em;"></div>
+
+        <button class="btn" type="button" onclick="register()">Daftar Akun</button>
+
+        <div class="helper-row">
+          <span id="registerHint">Akun siswa cocok untuk belajar mandiri.</span>
+          <button class="text-btn" type="button" onclick="showLogin()">Sudah punya akun?</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script> 
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+  
+  <script src="script.js"></script>
+</body>
+</html>

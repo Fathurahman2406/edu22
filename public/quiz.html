@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Quiz EduSmart - Evaluasi</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="dashboard-page">
+  <header class="topbar">
+    <div class="logo-area">
+      <div class="logo-circle">ES</div>
+      <div>
+        <div class="title">EduSmart</div>
+        <div class="subtle">Halaman Quiz</div>
+      </div>
+    </div>
+    <nav class="menu">
+      <a href="dashboard.html" class="menu-btn">Dashboard</a>
+      <a href="materi.html" class="menu-btn">Materi</a>
+      <a href="quiz.html" class="menu-btn active">Quiz</a>
+      <a href="kelas.html" class="menu-btn">Kelas</a>
+      <button onclick="logout()" class="btn-logout">Keluar</button>
+    </nav>
+  </header>
+
+  <main class="dashboard-container">
+    <section id="quizWorkArea" class="hidden section-shell" style="background: #fff; border: 2px solid #e67e22; padding: 25px; border-radius: 15px; margin-bottom: 25px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h2 id="quizActiveTitle" style="color: #e67e22; margin: 0;">Ujian Berlangsung</h2>
+        <div id="timerDisplay" style="font-weight: bold; color: #e74c3c; background: #ffebeb; padding: 10px 20px; border-radius: 8px; font-size: 1.2rem;">Sisa Waktu: --:--</div>
+      </div>
+      <div id="soalKonten" style="font-size: 1.1rem; line-height: 1.6;">
+        </div>
+    </section>
+
+    <section class="section-shell">
+      <div class="page-head">
+        <div>
+          <p class="eyebrow">Pusat Evaluasi</p>
+          <h1>Daftar Quiz Aktif</h1>
+          <p>Pilih quiz yang tersedia untuk kelas Anda.</p>
+        </div>
+        <button class="ghost-btn" id="btnCreateQuiz" onclick="toggleModal('modalQuiz')">Buat Quiz</button>
+      </div>
+
+      <div class="feature-grid" id="quizGrid">
+        </div>
+    </section>
+  </main>
+
+  <div id="modalQuiz" class="modal hidden">
+    <div class="modal-content" style="max-width: 500px;">
+      <h3>Tambah Quiz Baru</h3>
+      <div class="form-group">
+        <input type="text" id="quizTitle" placeholder="Judul Quiz">
+        <input type="text" id="quizClassCode" placeholder="Kode Kelas (Contoh: KLS001)">
+        <input type="number" id="quizDuration" placeholder="Durasi (Menit)">
+        <textarea id="soalText" placeholder="Pertanyaan..." style="height: 80px;"></textarea>
+        <input type="text" id="optA" placeholder="Pilihan A">
+        <input type="text" id="optB" placeholder="Pilihan B">
+        <input type="text" id="optC" placeholder="Pilihan C">
+        <select id="kunciJawaban" style="width: 100%; padding: 10px; margin-top: 10px;">
+          <option value="a">Jawaban Benar: A</option>
+          <option value="b">Jawaban Benar: B</option>
+          <option value="c">Jawaban Benar: C</option>
+        </select>
+      </div>
+      <div style="margin-top: 20px; display: flex; gap: 10px;">
+        <button onclick="simpanQuizBaru()" class="btn-primary" style="flex: 1;">Publikasikan</button>
+        <button onclick="toggleModal('modalQuiz')" class="btn-logout">Batal</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

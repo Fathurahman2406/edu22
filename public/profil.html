@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Profil EduSmart</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="dashboard-page" onload="initProfilePage()">
+  <header class="topbar">
+    <div class="logo-area">
+      <div class="logo-circle">ES</div>
+      <div>
+        <div class="title">EduSmart</div>
+        <div class="subtle">Profil pengguna</div>
+      </div>
+    </div>
+    <nav class="menu">
+      <a href="dashboard.html" class="menu-btn">Dashboard</a>
+      <a href="materi.html" class="menu-btn">Materi</a>
+      <a href="quiz.html" class="menu-btn">Quiz</a>
+      <a href="kelas.html" class="menu-btn">Kelas</a>
+      <a href="profil.html" class="menu-btn active">Profil</a>
+      <button onclick="logout()" class="btn-logout">Keluar</button>
+    </nav>
+  </header>
+
+  <main class="dashboard-container">
+    <section class="section-shell profile-layout">
+      <div class="profile-card">
+        <div class="avatar-box" id="avatarBox">ES</div>
+        <div class="profile-summary">
+          <h3 id="profileName">Pengguna EduSmart</h3>
+          <p id="profileRole">Role belum dipilih</p>
+        </div>
+      </div>
+
+      <div class="profile-card">
+        <p class="eyebrow">Informasi akun</p>
+        <h3>Detail profil</h3>
+        <div class="data-row">
+          <strong>Nama</strong>
+          <span id="detailName">-</span>
+        </div>
+        <div class="data-row">
+          <strong>Email</strong>
+          <span id="detailEmail">-</span>
+        </div>
+        <div class="data-row">
+          <strong>Role</strong>
+          <span id="detailRole">-</span>
+        </div>
+        <div class="data-row">
+          <strong>Status akun</strong>
+          <span>Aktif dan siap digunakan</span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>
