@@ -1927,3 +1927,60 @@ window.aturAksiDashboard = function() {
 window.tambahMateri = async function() {
     alert("Materi hanya dapat ditambahkan dari halaman kelas yang dibuat guru.");
 };
+
+/* ==========================================================
+   12. RESET PASSWORD MANUAL
+   ========================================================== */
+window.resetPasswordManual = async function() {
+    const email = document.getElementById("resetEmail")?.value.trim();
+    const newPass = document.getElementById("resetPassword")?.value;
+    const confirmPass = document.getElementById("resetConfirmPassword")?.value;
+    const resetError = document.getElementById("resetErrorMsg");
+
+    if (resetError) resetError.textContent = "";
+
+    if (!email || !newPass || !confirmPass) {
+        if (resetError) resetError.textContent = "Semua field wajib diisi.";
+        return;
+    }
+
+    if (newPass !== confirmPass) {
+        if (resetError) resetError.textContent = "Konfirmasi password tidak cocok.";
+        return;
+    }
+
+    const passwordRegex = /^(?=.*[A-Z])(?=.*[0-9])(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/;
+    if (!passwordRegex.test(newPass)) {
+        if (resetError) resetError.textContent = "Password wajib 8+ karakter, mengandung huruf besar, angka, dan simbol.";
+        return;
+    }
+
+    try {
+        const snapshot = await db.collection("users")
+            .where("email", "==", email)
+            .get();
+
+        if (snapshot.empty) {
+            if (resetError) resetError.textContent = "Email tidak ditemukan.";
+            return;
+        }
+
+        const batch = db.batch();
+        snapshot.forEach((doc) => {
+            batch.update(doc.ref, {
+                password: newPass
+            });
+        });
+
+        await batch.commit();
+
+        alert("Password berhasil diperbarui. Silakan login.");
+        if (document.getElementById("resetEmail")) document.getElementById("resetEmail").value = "";
+        if (document.getElementById("resetPassword")) document.getElementById("resetPassword").value = "";
+        if (document.getElementById("resetConfirmPassword")) document.getElementById("resetConfirmPassword").value = "";
+        toggleModal("modalLupaSandi");
+    } catch (e) {
+        console.error("Gagal reset password:", e);
+        if (resetError) resetError.textContent = "Gagal reset password.";
+    }
+};
