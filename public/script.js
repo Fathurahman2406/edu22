@@ -1688,28 +1688,57 @@ window.isiStatDashboard = async function(user) {
 
     try {
         if (isGuru()) {
-            const materiSnap = await db.collection("materi").where("email_pengunggah", "==", user.email).get();
-            const quizSnap = await db.collection("quizzes").where("pembuat", "==", user.email).get();
-            const kelasSnap = await db.collection("kelas").where("guru_email", "==", user.email).get();
+            const materiSnap = await db.collection("materi")
+                .where("email_pengunggah", "==", user.email)
+                .get();
+
+            const quizSnap = await db.collection("quizzes")
+                .where("pembuat", "==", user.email)
+                .get();
+
+            const kelasSnap = await db.collection("kelas")
+                .where("guru_email", "==", user.email)
+                .get();
 
             if (statOne) statOne.textContent = `${materiSnap.size} Materi dikelola`;
             if (statTwo) statTwo.textContent = `${quizSnap.size} Quiz dipublikasikan`;
             if (statThree) statThree.textContent = `${kelasSnap.size} Kelas aktif`;
         } else {
-            const materiSnap = await db.collection("materi").get();
-            const quizSnap = await db.collection("quizzes").get();
             const kelasSnap = await db.collection("kelas").get();
+            const joinedClassIds = [];
 
-            let ikutKelas = 0;
             kelasSnap.forEach(doc => {
                 const data = doc.data();
                 const siswa = data.siswa_terdaftar || [];
-                if (siswa.some(item => item.email === user.email)) ikutKelas++;
+                const ikut = siswa.some(item => item.email === user.email);
+                if (ikut) {
+                    joinedClassIds.push(doc.id);
+                }
             });
 
-            if (statOne) statOne.textContent = `${materiSnap.size} Materi tersedia`;
-            if (statTwo) statTwo.textContent = `${quizSnap.size} Quiz tersedia`;
-            if (statThree) statThree.textContent = `${ikutKelas} Kelas diikuti`;
+            const materiSnap = await db.collection("materi").get();
+            let totalMateri = 0;
+
+            materiSnap.forEach(doc => {
+                const data = doc.data();
+                if (joinedClassIds.includes(data.kelas_id)) {
+                    totalMateri++;
+                }
+            });
+
+            const quizSnap = await db.collection("quizzes").get();
+            let totalQuiz = 0;
+
+            quizSnap.forEach(doc => {
+                const data = doc.data();
+                if (joinedClassIds.includes(data.kelas_id)) {
+                    totalQuiz++;
+                }
+            });
+
+            if (statOne) statOne.textContent = `${totalMateri} Materi tersedia`;
+            if (statTwo) statTwo.textContent = `${totalQuiz} Quiz tersedia`;
+            if (statThree) statThree.textContent = `${joinedClassIds.length} Kelas diikuti`;
         }
     } catch (e) {
         console.error("Gagal memuat statistik dashboard:", e);
@@ -1761,11 +1790,52 @@ window.isiMateriDashboard = async function(user) {
         let materiList = [];
 
         if (isGuru()) {
-            const snapshot = await db.collection("materi").where("email_pengunggah", "==", user.email).get();
-            snapshot.forEach(doc => materiList.push({ id: doc.id, ...doc.data() }));
+            const snapshot = await db.collection("materi")
+                .where("email_pengunggah", "==", user.email)
+                .get();
+
+            snapshot.forEach(doc => {
+                materiList.push({
+                    id: doc.id,
+                    ...doc.data()
+                });
+            });
         } else {
-            const snapshot = await db.collection("materi").get();
-            snapshot.forEach(doc => materiList.push({ id: doc.id, ...doc.data() }));
+            // siswa: hanya ambil materi dari kelas yang diikuti
+            const kelasSnap = await db.collection("kelas").get();
+            const joinedClassIds = [];
+
+            kelasSnap.forEach(doc => {
+                const data = doc.data();
+                const siswa = data.siswa_terdaftar || [];
+                const ikut = siswa.some(item => item.email === user.email);
+                if (ikut) {
+                    joinedClassIds.push(doc.id);
+                }
+            });
+
+            // kalau belum ikut kelas, jangan tampilkan materi
+            if (!joinedClassIds.length) {
+                materiGrid.innerHTML = `
+                    <article class="card-subject">
+                        <div class="subject-tag">BELUM ADA</div>
+                        <h3>Belum ada materi</h3>
+                        <p>Anda belum tergabung ke kelas mana pun.</p>
+                    </article>
+                `;
+                return;
+            }
+
+            const materiSnap = await db.collection("materi").get();
+            materiSnap.forEach(doc => {
+                const data = doc.data();
+                if (joinedClassIds.includes(data.kelas_id)) {
+                    materiList.push({
+                        id: doc.id,
+                        ...data
+                    });
+                }
+            });
         }
 
         materiList.sort((a, b) => {
@@ -1782,7 +1852,7 @@ window.isiMateriDashboard = async function(user) {
                 <article class="card-subject">
                     <div class="subject-tag">BELUM ADA</div>
                     <h3>Belum ada materi</h3>
-                    <p>${isGuru() ? "Anda belum mengunggah materi." : "Belum ada materi yang tersedia."}</p>
+                    <p>${isGuru() ? "Anda belum mengunggah materi." : "Belum ada materi untuk kelas yang Anda ikuti."}</p>
                 </article>
             `;
             return;
