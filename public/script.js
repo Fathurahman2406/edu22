@@ -316,6 +316,7 @@ window.muatDaftarKelas = async function() {
                     <div class="subject-tag">BELUM ADA</div>
                     <h3>Belum ada kelas</h3>
                     <p>Kelas akan tampil di sini.</p>
+            
                 </article>
             `;
             return;
@@ -341,6 +342,7 @@ window.muatDaftarKelas = async function() {
                     <div class="card-footer-row" style="margin-top:16px; display:flex; gap:10px; flex-wrap:wrap;">
                         <a href="materi.html?kelas_id=${doc.id}" class="btn-buka">Materi</a>
                         <button class="btn-buka" onclick="lihatDetailKelas('${doc.id}')">Detail Kelas</button>
+                        ${isPemilik ? `<button class="ghost-btn" onclick="lihatSiswaKelas('${doc.id}')">Lihat Siswa</button>` : ''}
                         ${isPemilik ? `<button class="ghost-btn" onclick="hapusKelas('${doc.id}')">Hapus</button>` : ''}
                     </div>
                 </article>
@@ -386,6 +388,66 @@ window.hapusKelas = async function(id) {
 
 window.lihatDetailKelas = function(id) {
     window.location.href = `kelas.html?kelas_id=${id}&tab=detail`;
+};
+
+window.lihatSiswaKelas = async function(kelasId) {
+    if (!isGuru()) {
+        alert("Hanya guru yang dapat melihat daftar siswa.");
+        return;
+    }
+
+    const container = document.getElementById("daftarSiswaKelas");
+    if (!container) return;
+
+    try {
+        const doc = await db.collection("kelas").doc(kelasId).get();
+
+        if (!doc.exists) {
+            container.innerHTML = `<p>Kelas tidak ditemukan.</p>`;
+            toggleModal("modalSiswaKelas");
+            return;
+        }
+
+        const data = doc.data();
+        const siswa = data.siswa_terdaftar || [];
+        const user = getCurrentUser();
+
+        // pastikan hanya guru pemilik kelas yang bisa lihat
+        if (data.guru_email !== user.email) {
+            alert("Anda tidak memiliki akses ke daftar siswa kelas ini.");
+            return;
+        }
+
+        container.innerHTML = "";
+
+        if (!siswa.length) {
+            container.innerHTML = `
+                <article class="card-subject">
+                    <div class="subject-tag">BELUM ADA</div>
+                    <h3>Belum ada siswa</h3>
+                    <p>Belum ada siswa yang bergabung ke kelas ini.</p>
+                </article>
+            `;
+            toggleModal("modalSiswaKelas");
+            return;
+        }
+
+        siswa.forEach((item, index) => {
+            container.innerHTML += `
+                <article class="card-subject" style="margin-bottom:12px;">
+                    <div class="subject-tag">SISWA ${index + 1}</div>
+                    <h3>${escapeHtml(item.nama || "Tanpa Nama")}</h3>
+                    <p><strong>Email:</strong> ${escapeHtml(item.email || "-")}</p>
+                </article>
+            `;
+        });
+
+        toggleModal("modalSiswaKelas");
+    } catch (e) {
+        console.error("Gagal memuat daftar siswa:", e);
+        container.innerHTML = `<p>Gagal memuat daftar siswa.</p>`;
+        toggleModal("modalSiswaKelas");
+    }
 };
 
 /* ==========================================================
@@ -1127,12 +1189,14 @@ window.resetFormSoalAktif = function() {
     const optA = document.getElementById("optA");
     const optB = document.getElementById("optB");
     const optC = document.getElementById("optC");
+    const optD = document.getElementById("optD");
     const kunci = document.getElementById("kunciJawaban");
 
     if (soalText) soalText.value = "";
     if (optA) optA.value = "";
     if (optB) optB.value = "";
     if (optC) optC.value = "";
+    if (optD) optD.value = "";
     if (kunci) kunci.value = "a";
 };
 
@@ -1141,14 +1205,15 @@ window.simpanSoalSementara = function() {
     const a = document.getElementById("optA")?.value.trim();
     const b = document.getElementById("optB")?.value.trim();
     const c = document.getElementById("optC")?.value.trim();
+    const d = document.getElementById("optD")?.value.trim();
     const kunci = document.getElementById("kunciJawaban")?.value;
 
-    if (!soal || !a || !b || !c || !kunci) {
+    if (!soal || !a || !b || !c || !d || !kunci) {
         alert("Lengkapi semua field soal terlebih dahulu.");
         return;
     }
 
-    draftSoalQuiz.push({ soal, a, b, c, kunci });
+    draftSoalQuiz.push({ soal, a, b, c, d, kunci });
     renderPreviewSoal();
     resetFormSoalAktif();
 };
@@ -1391,7 +1456,8 @@ window.mulaiQuiz = async function(id) {
                 <p><strong>${index + 1}. ${escapeHtml(soal.soal)}</strong></p>
                 <label><input type="radio" name="jawaban_${index}" value="a"> ${escapeHtml(soal.a)}</label><br><br>
                 <label><input type="radio" name="jawaban_${index}" value="b"> ${escapeHtml(soal.b)}</label><br><br>
-                <label><input type="radio" name="jawaban_${index}" value="c"> ${escapeHtml(soal.c)}</label>
+                <label><input type="radio" name="jawaban_${index}" value="c"> ${escapeHtml(soal.c)}</label><br><br>
+                <label><input type="radio" name="jawaban_${index}" value="d"> ${escapeHtml(soal.d)}</label>
             </div>
         `).join("") + `
             <button class="btn-buka" onclick="submitQuiz('${id}')">Kirim Jawaban</button>
@@ -1894,13 +1960,37 @@ window.isiQuizDashboard = async function(user) {
         let snapshot;
 
         if (isGuru()) {
-            snapshot = await db.collection("quizzes").where("pembuat", "==", user.email).get();
+            // Guru: tetap lihat quiz miliknya sendiri
+            snapshot = await db.collection("quizzes")
+                .where("pembuat", "==", user.email)
+                .get();
+
+            snapshot.forEach(doc => {
+                quizList.push({ id: doc.id, ...doc.data() });
+            });
+
         } else {
+            // 🔥 Siswa: ambil kelas yang diikuti
+            const joinedClassIds = await getKelasYangDiikutiSiswa();
+
+            if (!joinedClassIds.length) {
+                quizGrid.innerHTML = `<p>Anda belum mengikuti kelas apapun.</p>`;
+                return;
+            }
+
             snapshot = await db.collection("quizzes").get();
+
+            snapshot.forEach(doc => {
+                const data = doc.data();
+
+                // ✅ FILTER DI SINI
+                if (joinedClassIds.includes(data.kelas_id)) {
+                    quizList.push({ id: doc.id, ...data });
+                }
+            });
         }
 
-        snapshot.forEach(doc => quizList.push({ id: doc.id, ...doc.data() }));
-
+        // sorting
         quizList.sort((a, b) => {
             const aTime = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
             const bTime = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
@@ -1928,6 +2018,7 @@ window.isiQuizDashboard = async function(user) {
                 </article>
             `;
         });
+
     } catch (e) {
         console.error("Gagal memuat quiz dashboard:", e);
         quizGrid.innerHTML = `<p>Gagal memuat quiz.</p>`;
@@ -2052,5 +2143,51 @@ window.resetPasswordManual = async function() {
     } catch (e) {
         console.error("Gagal reset password:", e);
         if (resetError) resetError.textContent = "Gagal reset password.";
+    }
+};
+
+window.lihatSiswaKelas = async function(kelasId) {
+    try {
+        const doc = await db.collection("kelas").doc(kelasId).get();
+
+        if (!doc.exists) {
+            alert("Kelas tidak ditemukan");
+            return;
+        }
+
+        const data = doc.data();
+        const siswa = Array.isArray(data.siswa_terdaftar) ? data.siswa_terdaftar : [];
+
+        console.log("DATA SISWA:", siswa); // debug
+
+        const container = document.getElementById("daftarSiswaKelas");
+
+        if (!container) {
+            console.error("Element daftarSiswaKelas tidak ada di HTML");
+            return;
+        }
+
+        container.innerHTML = "";
+
+        if (siswa.length === 0) {
+            container.innerHTML = `<p>Belum ada siswa yang bergabung.</p>`;
+            return;
+        }
+
+        siswa.forEach((s, i) => {
+            container.innerHTML += `
+                <div class="card-siswa">
+                    <p><strong>${i + 1}. ${escapeHtml(s.nama || "-")}</strong></p>
+                    <p>${escapeHtml(s.email || "-")}</p>
+                </div>
+            `;
+        });
+
+        // tampilkan modal / section
+        toggleModal("modalSiswaKelas");
+
+    } catch (e) {
+        console.error("Gagal ambil siswa:", e);
+        alert("Gagal memuat data siswa");
     }
 };
