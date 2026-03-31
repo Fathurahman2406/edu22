@@ -1073,8 +1073,9 @@ window.hapusMateri = async function(id) {
 };
 
 /* ==========================================================
-   8. QUIZ
+   8. LIVE QUIZ FINAL
    ========================================================== */
+
 window.loadKelasUntukQuiz = async function() {
     const select = document.getElementById("quizKelasSelect");
     const user = getCurrentUser();
@@ -1122,18 +1123,117 @@ window.getKelasYangDiikutiSiswa = async function() {
 
     try {
         const kelasSnap = await db.collection("kelas").get();
-
         kelasSnap.forEach((doc) => {
             const data = doc.data();
             const siswa = data.siswa_terdaftar || [];
-            const ikut = siswa.some(item => item.email === user.email);
-            if (ikut) joinedClassIds.push(doc.id);
+            if (siswa.some(item => item.email === user.email)) {
+                joinedClassIds.push(doc.id);
+            }
         });
     } catch (e) {
         console.error("Gagal mengambil kelas siswa:", e);
     }
 
     return joinedClassIds;
+};
+
+window.formatDateTimeDisplay = function(value) {
+    if (!value) return "-";
+    try {
+        const date = value.toDate ? value.toDate() : new Date(value);
+        return date.toLocaleString("id-ID", {
+            day: "2-digit",
+            month: "long",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit"
+        });
+    } catch {
+        return "-";
+    }
+};
+
+window.getQuizStatus = function(quiz) {
+    if (!quiz.quiz_aktif) return "belum_diaktifkan";
+
+    const now = Date.now();
+    const startMs = quiz.jadwal_mulai?.toMillis
+        ? quiz.jadwal_mulai.toMillis()
+        : new Date(quiz.jadwal_mulai).getTime();
+
+    const endMs = startMs + ((quiz.durasi || 10) * 60 * 1000);
+
+    if (now < startMs) return "menunggu_jadwal";
+    if (now >= startMs && now < endMs) return "aktif";
+    return "selesai";
+};
+
+window.getQuizAttemptKey = function(quizId, userEmail) {
+    return `quiz_attempt_${quizId}_${userEmail}`;
+};
+
+window.saveQuizAttemptState = function(quizId, state) {
+    const user = getCurrentUser();
+    localStorage.setItem(getQuizAttemptKey(quizId, user.email), JSON.stringify(state));
+};
+
+window.getQuizAttemptState = function(quizId) {
+    const user = getCurrentUser();
+    const raw = localStorage.getItem(getQuizAttemptKey(quizId, user.email));
+    return raw ? JSON.parse(raw) : null;
+};
+
+window.clearQuizAttemptState = function(quizId) {
+    const user = getCurrentUser();
+    localStorage.removeItem(getQuizAttemptKey(quizId, user.email));
+};
+
+window.handleQuizAnswerChange = function(quizId, nomor, value) {
+    const state = getQuizAttemptState(quizId);
+    if (!state) return;
+
+    state.answers = state.answers || {};
+    state.answers[String(nomor)] = value;
+    saveQuizAttemptState(quizId, state);
+};
+
+window.restoreQuizAnswers = function(quizId) {
+    const state = getQuizAttemptState(quizId);
+    if (!state || !state.answers) return;
+
+    Object.keys(state.answers).forEach((nomor) => {
+        const value = state.answers[nomor];
+        const input = document.querySelector(`input[name="jawaban_${nomor}"][value="${value}"]`);
+        if (input) input.checked = true;
+    });
+};
+
+window.resumeActiveQuizIfAny = async function() {
+    if (!isSiswa()) return;
+
+    const user = getCurrentUser();
+    try {
+        const joinedClassIds = await getKelasYangDiikutiSiswa();
+        const snapshot = await db.collection("quizzes").get();
+
+        for (const doc of snapshot.docs) {
+            const data = doc.data();
+            if (!joinedClassIds.includes(data.kelas_id)) continue;
+
+            const attempt = localStorage.getItem(getQuizAttemptKey(doc.id, user.email));
+            if (!attempt) continue;
+
+            const parsed = JSON.parse(attempt);
+            if (Date.now() < parsed.endAt && !parsed.submitted) {
+                await mulaiQuiz(doc.id, true);
+                return;
+            } else {
+                clearQuizAttemptState(doc.id);
+            }
+        }
+    } catch (e) {
+        console.error("Gagal resume live quiz:", e);
+    }
 };
 
 window.initQuizPage = async function() {
@@ -1152,6 +1252,8 @@ window.initQuizPage = async function() {
             btnCreateQuiz.onclick = async function() {
                 resetFormQuiz();
                 await loadKelasUntukQuiz();
+                document.getElementById("modalQuizTitle").textContent = "Tambah Live Quiz Baru";
+                document.getElementById("btnSimpanQuiz").textContent = "Publikasikan";
                 toggleModal("modalQuiz");
             };
         } else {
@@ -1164,6 +1266,7 @@ window.initQuizPage = async function() {
     }
 
     await muatDaftarQuiz();
+    await resumeActiveQuizIfAny();
 };
 
 window.resetFormQuiz = function() {
@@ -1172,10 +1275,14 @@ window.resetFormQuiz = function() {
     const title = document.getElementById("quizTitle");
     const kelasSelect = document.getElementById("quizKelasSelect");
     const duration = document.getElementById("quizDuration");
+    const schedule = document.getElementById("quizScheduleStart");
+    const editId = document.getElementById("quizEditId");
 
     if (title) title.value = "";
     if (kelasSelect) kelasSelect.value = "";
     if (duration) duration.value = "";
+    if (schedule) schedule.value = "";
+    if (editId) editId.value = "";
 
     resetFormSoalAktif();
     renderPreviewSoal();
@@ -1239,7 +1346,13 @@ window.renderPreviewSoal = function() {
                     <button type="button" class="ghost-btn" onclick="hapusSoalDraft(${index})">Hapus</button>
                 </div>
                 <p style="margin:8px 0 6px 0;">${escapeHtml(item.soal)}</p>
-                <small>Kunci: ${item.kunci.toUpperCase()}</small>
+                <small>
+                  A: ${escapeHtml(item.a)}<br>
+                  B: ${escapeHtml(item.b)}<br>
+                  C: ${escapeHtml(item.c)}<br>
+                  D: ${escapeHtml(item.d)}<br>
+                  Kunci: ${item.kunci.toUpperCase()}
+                </small>
             </div>
         `;
     });
@@ -1259,12 +1372,14 @@ window.simpanQuizBaru = async function() {
         return;
     }
 
+    const editId = document.getElementById("quizEditId")?.value || "";
     const judul = document.getElementById('quizTitle')?.value.trim();
     const kelasId = document.getElementById('quizKelasSelect')?.value;
     const durasi = parseInt(document.getElementById('quizDuration')?.value) || 10;
+    const jadwalMulaiRaw = document.getElementById('quizScheduleStart')?.value;
 
-    if (!judul || !kelasId) {
-        alert("Judul quiz dan kelas wajib dipilih.");
+    if (!judul || !kelasId || !jadwalMulaiRaw) {
+        alert("Judul quiz, kelas, dan jadwal mulai wajib diisi.");
         return;
     }
 
@@ -1287,26 +1402,208 @@ window.simpanQuizBaru = async function() {
             return;
         }
 
-        await db.collection("quizzes").add({
-            judul_quiz: judul,
-            kelas_id: kelasId,
-            kelas_nama: kelasData.nama_kelas || "",
-            kode_kelas: kelasData.kode_kelas || "",
-            durasi: durasi,
-            pembuat: user.email,
-            pembuat_nama: getNamaUser(user),
-            pertanyaan: draftSoalQuiz,
-            hasil_siswa: [],
-            createdAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
+        const jadwalMulaiDate = new Date(jadwalMulaiRaw);
+        if (Number.isNaN(jadwalMulaiDate.getTime())) {
+            alert("Jadwal mulai tidak valid.");
+            return;
+        }
 
-        alert("Quiz berhasil dipublikasikan.");
+        if (editId) {
+            const existingDoc = await db.collection("quizzes").doc(editId).get();
+            if (!existingDoc.exists) {
+                alert("Quiz tidak ditemukan.");
+                return;
+            }
+
+            const existingData = existingDoc.data();
+            if (existingData.pembuat !== user.email) {
+                alert("Anda tidak berhak mengedit quiz ini.");
+                return;
+            }
+
+            if (existingData.quiz_aktif) {
+                alert("Quiz yang sudah aktif tidak dapat diedit.");
+                return;
+            }
+
+            await db.collection("quizzes").doc(editId).update({
+                judul_quiz: judul,
+                kelas_id: kelasId,
+                kelas_nama: kelasData.nama_kelas || "",
+                kode_kelas: kelasData.kode_kelas || "",
+                durasi: durasi,
+                jadwal_mulai: jadwalMulaiDate,
+                pertanyaan: draftSoalQuiz
+            });
+
+            alert("Quiz berhasil diperbarui.");
+        } else {
+            await db.collection("quizzes").add({
+                judul_quiz: judul,
+                kelas_id: kelasId,
+                kelas_nama: kelasData.nama_kelas || "",
+                kode_kelas: kelasData.kode_kelas || "",
+                durasi: durasi,
+                jadwal_mulai: jadwalMulaiDate,
+                quiz_aktif: false,
+                pembuat: user.email,
+                pembuat_nama: getNamaUser(user),
+                pertanyaan: draftSoalQuiz,
+                hasil_siswa: [],
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+
+            alert("Quiz berhasil dibuat.");
+        }
+
         toggleModal("modalQuiz");
         resetFormQuiz();
         muatDaftarQuiz();
     } catch (e) {
-        console.error("Gagal membuat quiz:", e);
-        alert("Gagal membuat quiz.");
+        console.error("Gagal menyimpan quiz:", e);
+        alert("Gagal menyimpan quiz.");
+    }
+};
+
+window.editQuiz = async function(id) {
+    if (!isGuru()) return;
+
+    try {
+        const doc = await db.collection("quizzes").doc(id).get();
+        if (!doc.exists) {
+            alert("Quiz tidak ditemukan.");
+            return;
+        }
+
+        const data = doc.data();
+        const user = getCurrentUser();
+
+        if (data.pembuat !== user.email) {
+            alert("Anda tidak dapat mengedit quiz ini.");
+            return;
+        }
+
+        if (data.quiz_aktif) {
+            alert("Quiz yang sudah aktif tidak dapat diedit.");
+            return;
+        }
+
+        await loadKelasUntukQuiz();
+
+        document.getElementById("quizEditId").value = id;
+        document.getElementById("quizTitle").value = data.judul_quiz || "";
+        document.getElementById("quizKelasSelect").value = data.kelas_id || "";
+        document.getElementById("quizDuration").value = data.durasi || 10;
+        document.getElementById("quizScheduleStart").value = data.jadwal_mulai
+            ? (() => {
+                const date = data.jadwal_mulai.toDate ? data.jadwal_mulai.toDate() : new Date(data.jadwal_mulai);
+                const yyyy = date.getFullYear();
+                const mm = String(date.getMonth() + 1).padStart(2, "0");
+                const dd = String(date.getDate()).padStart(2, "0");
+                const hh = String(date.getHours()).padStart(2, "0");
+                const mi = String(date.getMinutes()).padStart(2, "0");
+                return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+            })()
+            : "";
+
+        draftSoalQuiz = Array.isArray(data.pertanyaan) ? [...data.pertanyaan] : [];
+        renderPreviewSoal();
+        resetFormSoalAktif();
+
+        document.getElementById("modalQuizTitle").textContent = "Edit Quiz";
+        document.getElementById("btnSimpanQuiz").textContent = "Simpan Perubahan";
+        toggleModal("modalQuiz");
+    } catch (e) {
+        console.error("Gagal edit quiz:", e);
+        alert("Gagal membuka data quiz.");
+    }
+};
+
+window.rescheduleQuiz = async function(id) {
+    if (!isGuru()) return;
+
+    try {
+        const doc = await db.collection("quizzes").doc(id).get();
+        if (!doc.exists) {
+            alert("Quiz tidak ditemukan.");
+            return;
+        }
+
+        const data = doc.data();
+        const user = getCurrentUser();
+
+        if (data.pembuat !== user.email) {
+            alert("Anda tidak dapat mengubah jadwal quiz ini.");
+            return;
+        }
+
+        if (data.quiz_aktif) {
+            alert("Quiz yang sudah aktif tidak dapat di-reschedule.");
+            return;
+        }
+
+        const jadwalLama = data.jadwal_mulai
+            ? formatDateTimeDisplay(data.jadwal_mulai)
+            : "-";
+
+        const inputBaru = prompt(`Masukkan jadwal baru quiz.\nFormat: YYYY-MM-DDTHH:MM\nJadwal lama: ${jadwalLama}`);
+
+        if (!inputBaru) return;
+
+        const newDate = new Date(inputBaru);
+        if (Number.isNaN(newDate.getTime())) {
+            alert("Format jadwal tidak valid.");
+            return;
+        }
+
+        await db.collection("quizzes").doc(id).update({
+            jadwal_mulai: newDate
+        });
+
+        alert("Jadwal quiz berhasil diperbarui.");
+        muatDaftarQuiz();
+    } catch (e) {
+        console.error("Gagal reschedule quiz:", e);
+        alert("Gagal mengubah jadwal quiz.");
+    }
+};
+
+window.aktifkanQuiz = async function(id) {
+    if (!isGuru()) return;
+
+    try {
+        const doc = await db.collection("quizzes").doc(id).get();
+        if (!doc.exists) {
+            alert("Quiz tidak ditemukan.");
+            return;
+        }
+
+        const data = doc.data();
+        const user = getCurrentUser();
+
+        if (data.pembuat !== user.email) {
+            alert("Anda tidak dapat mengaktifkan quiz ini.");
+            return;
+        }
+
+        if (data.quiz_aktif) {
+            alert("Quiz sudah aktif.");
+            return;
+        }
+
+        const konfirmasi = confirm("Aktifkan quiz ini sekarang? Setelah aktif, quiz tidak bisa diedit.");
+        if (!konfirmasi) return;
+
+        await db.collection("quizzes").doc(id).update({
+            quiz_aktif: true,
+            diaktifkan_pada: new Date()
+        });
+
+        alert("Quiz berhasil diaktifkan.");
+        muatDaftarQuiz();
+    } catch (e) {
+        console.error("Gagal mengaktifkan quiz:", e);
+        alert("Gagal mengaktifkan quiz.");
     }
 };
 
@@ -1346,8 +1643,8 @@ window.muatDaftarQuiz = async function() {
         }
 
         quizList.sort((a, b) => {
-            const aTime = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
-            const bTime = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+            const aTime = a.jadwal_mulai?.toMillis ? a.jadwal_mulai.toMillis() : new Date(a.jadwal_mulai).getTime();
+            const bTime = b.jadwal_mulai?.toMillis ? b.jadwal_mulai.toMillis() : new Date(b.jadwal_mulai).getTime();
             return bTime - aTime;
         });
 
@@ -1370,17 +1667,32 @@ window.muatDaftarQuiz = async function() {
             const jumlahSoal = Array.isArray(data.pertanyaan) ? data.pertanyaan.length : 0;
             const hasilSiswa = Array.isArray(data.hasil_siswa) ? data.hasil_siswa : [];
             const sudahMengerjakan = hasilSiswa.some(item => item.email === user.email);
+            const status = getQuizStatus(data);
+
+            let badgeStatus = "DRAFT";
+            if (status === "menunggu_jadwal") badgeStatus = "MENUNGGU JADWAL";
+            if (status === "aktif") badgeStatus = "QUIZ AKTIF";
+            if (status === "selesai") badgeStatus = "SELESAI";
 
             grid.innerHTML += `
                 <article class="card-subject">
-                    <div class="subject-tag">QUIZ</div>
+                    <div class="subject-tag">${badgeStatus}</div>
                     <h3>${escapeHtml(data.judul_quiz || "-")}</h3>
                     <p><strong>Kelas:</strong> ${escapeHtml(data.kelas_nama || "-")}</p>
+                    <p><strong>Mulai:</strong> ${formatDateTimeDisplay(data.jadwal_mulai)}</p>
                     <p><strong>Durasi:</strong> ${data.durasi || 10} menit</p>
                     <p><strong>Jumlah soal:</strong> ${jumlahSoal}</p>
+
                     <div class="card-footer-row" style="margin-top:16px; display:flex; gap:10px; flex-wrap:wrap;">
-                        ${isSiswa() && !sudahMengerjakan ? `<button class="btn-buka" onclick="mulaiQuiz('${data.id}')">Mulai</button>` : ""}
+                        ${isSiswa() && status === "aktif" && !sudahMengerjakan ? `<button class="btn-buka" onclick="mulaiQuiz('${data.id}')">Masuk Quiz</button>` : ""}
+                        ${isSiswa() && status === "belum_diaktifkan" ? `<button class="ghost-btn" disabled>Menunggu Guru</button>` : ""}
+                        ${isSiswa() && status === "menunggu_jadwal" ? `<button class="ghost-btn" disabled>Menunggu Jadwal</button>` : ""}
+                        ${isSiswa() && status === "selesai" && !sudahMengerjakan ? `<button class="ghost-btn" disabled>Quiz Selesai</button>` : ""}
                         ${isSiswa() && sudahMengerjakan ? `<button class="ghost-btn" onclick="lihatNilaiQuiz('${data.id}')">Lihat Nilai</button>` : ""}
+
+                        ${isOwner && !data.quiz_aktif ? `<button class="btn-buka" onclick="aktifkanQuiz('${data.id}')">Quiz Aktif</button>` : ""}
+                        ${isOwner && !data.quiz_aktif ? `<button class="ghost-btn" onclick="editQuiz('${data.id}')">Edit Quiz</button>` : ""}
+                        ${isOwner && !data.quiz_aktif ? `<button class="ghost-btn" onclick="rescheduleQuiz('${data.id}')">Reschedule</button>` : ""}
                         ${isOwner ? `<button class="ghost-btn" onclick="lihatNilaiQuiz('${data.id}')">Nilai Siswa</button>` : ""}
                         ${isOwner ? `<button class="ghost-btn" onclick="hapusQuiz('${data.id}')">Hapus</button>` : ""}
                     </div>
@@ -1420,10 +1732,11 @@ window.hapusQuiz = async function(id) {
     }
 };
 
-window.mulaiQuiz = async function(id) {
+window.mulaiQuiz = async function(id, fromResume = false) {
     const workArea = document.getElementById("quizWorkArea");
     const soalKonten = document.getElementById("soalKonten");
     const quizActiveTitle = document.getElementById("quizActiveTitle");
+    const quizActiveMeta = document.getElementById("quizActiveMeta");
     const timerDisplay = document.getElementById("timerDisplay");
     const user = getCurrentUser();
 
@@ -1450,25 +1763,65 @@ window.mulaiQuiz = async function(id) {
             return;
         }
 
+        const status = getQuizStatus(data);
+        if (status !== "aktif") {
+            alert("Quiz belum aktif atau sudah selesai.");
+            return;
+        }
+
+        const startMs = data.jadwal_mulai?.toMillis
+            ? data.jadwal_mulai.toMillis()
+            : new Date(data.jadwal_mulai).getTime();
+
+        const endMs = startMs + ((data.durasi || 10) * 60 * 1000);
+
+        let attemptState = getQuizAttemptState(id);
+
+        if (!attemptState || fromResume === false) {
+            if (!attemptState) {
+                attemptState = {
+                    quizId: id,
+                    startedAt: startMs,
+                    endAt: endMs,
+                    answers: {},
+                    submitted: false
+                };
+                saveQuizAttemptState(id, attemptState);
+            }
+        }
+
+        if (Date.now() >= attemptState.endAt) {
+            clearQuizAttemptState(id);
+            await submitQuiz(id, true);
+            return;
+        }
+
         workArea.classList.remove("hidden");
         quizActiveTitle.textContent = data.judul_quiz || "Quiz";
+        if (quizActiveMeta) {
+            quizActiveMeta.textContent = `Kelas: ${data.kelas_nama || "-"} • Mulai: ${formatDateTimeDisplay(data.jadwal_mulai)}`;
+        }
 
         soalKonten.innerHTML = pertanyaan.map((soal, index) => `
             <div style="margin-bottom:24px; padding-bottom:16px; border-bottom:1px solid #eee;">
                 <p><strong>${index + 1}. ${escapeHtml(soal.soal)}</strong></p>
-                <label><input type="radio" name="jawaban_${index}" value="a"> ${escapeHtml(soal.a)}</label><br><br>
-                <label><input type="radio" name="jawaban_${index}" value="b"> ${escapeHtml(soal.b)}</label><br><br>
-                <label><input type="radio" name="jawaban_${index}" value="c"> ${escapeHtml(soal.c)}</label><br><br>
-                <label><input type="radio" name="jawaban_${index}" value="d"> ${escapeHtml(soal.d)}</label>
+                <label><input type="radio" name="jawaban_${index}" value="a" onchange="handleQuizAnswerChange('${id}', ${index}, 'a')"> ${escapeHtml(soal.a)}</label><br><br>
+                <label><input type="radio" name="jawaban_${index}" value="b" onchange="handleQuizAnswerChange('${id}', ${index}, 'b')"> ${escapeHtml(soal.b)}</label><br><br>
+                <label><input type="radio" name="jawaban_${index}" value="c" onchange="handleQuizAnswerChange('${id}', ${index}, 'c')"> ${escapeHtml(soal.c)}</label><br><br>
+                <label><input type="radio" name="jawaban_${index}" value="d" onchange="handleQuizAnswerChange('${id}', ${index}, 'd')"> ${escapeHtml(soal.d)}</label>
             </div>
         `).join("") + `
             <button class="btn-buka" onclick="submitQuiz('${id}')">Kirim Jawaban</button>
         `;
 
-        let sisaDetik = (data.durasi || 10) * 60;
+        restoreQuizAnswers(id);
 
         clearInterval(quizTimer);
         quizTimer = setInterval(() => {
+            const state = getQuizAttemptState(id);
+            const targetEnd = state?.endAt || endMs;
+            const sisaDetik = Math.max(0, Math.floor((targetEnd - Date.now()) / 1000));
+
             const menit = String(Math.floor(sisaDetik / 60)).padStart(2, '0');
             const detik = String(sisaDetik % 60).padStart(2, '0');
             timerDisplay.textContent = `Sisa Waktu: ${menit}:${detik}`;
@@ -1476,10 +1829,7 @@ window.mulaiQuiz = async function(id) {
             if (sisaDetik <= 0) {
                 clearInterval(quizTimer);
                 submitQuiz(id, true);
-                return;
             }
-
-            sisaDetik--;
         }, 1000);
     } catch (e) {
         console.error("Gagal memulai quiz:", e);
@@ -1500,15 +1850,19 @@ window.submitQuiz = async function(id, autoSubmit = false) {
 
         const sudahAda = hasil.some((item) => item.email === user.email);
         if (sudahAda) {
+            clearQuizAttemptState(id);
             alert("Anda sudah mengerjakan quiz ini.");
             return;
         }
+
+        const state = getQuizAttemptState(id);
+        const answers = state?.answers || {};
 
         let benar = 0;
         const jawabanSiswa = [];
 
         for (let i = 0; i < pertanyaan.length; i++) {
-            const jawaban = document.querySelector(`input[name="jawaban_${i}"]:checked`)?.value || null;
+            const jawaban = answers[String(i)] || document.querySelector(`input[name="jawaban_${i}"]:checked`)?.value || null;
 
             jawabanSiswa.push({
                 nomor: i + 1,
@@ -1536,7 +1890,13 @@ window.submitQuiz = async function(id, autoSubmit = false) {
             hasil_siswa: hasil
         });
 
+        if (state) {
+            state.submitted = true;
+            saveQuizAttemptState(id, state);
+        }
+
         clearInterval(quizTimer);
+        clearQuizAttemptState(id);
         alert(autoSubmit ? `Waktu habis. Nilai Anda: ${skor}` : `Quiz selesai. Nilai Anda: ${skor}`);
         document.getElementById("quizWorkArea")?.classList.add("hidden");
         muatDaftarQuiz();
