@@ -131,6 +131,7 @@ window.register = async function() {
             email: email,
             password: pass,
             role: registerRole,
+            foto_profile: "",
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
         });
 
@@ -165,7 +166,8 @@ window.login = async function() {
             localStorage.setItem('edusmartUser', JSON.stringify({
                 nama_lengkap: data.nama_lengkap || data.fullName || data.name || "Tidak ada nama",
                 email: data.email,
-                role: data.role
+                role: data.role,
+                foto_profile: data.foto_profile || ""
             }));
         });
 
@@ -1659,56 +1661,286 @@ window.lihatNilaiQuiz = async function(id) {
 /* ==========================================================
    9. PROFILE
    ========================================================== */
+window.findCurrentUserDoc = async function() {
+    const user = getCurrentUser();
+
+    const snapshot = await db.collection("users")
+        .where("email", "==", user.email)
+        .where("role", "==", user.role)
+        .get();
+
+    if (snapshot.empty) return null;
+
+    return snapshot.docs[0];
+};
+
+window.readImageAsDataURL = function(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = e => resolve(e.target.result);
+        reader.onerror = err => reject(err);
+        reader.readAsDataURL(file);
+    });
+};
+
+window.renderAvatarProfil = function(name, fotoUrl = "") {
+    const avatarBox = document.getElementById("avatarBox");
+    if (!avatarBox) return;
+
+    if (fotoUrl) {
+        avatarBox.innerHTML = `<img src="${fotoUrl}" alt="Foto Profil" style="width:100%; height:100%; object-fit:cover;">`;
+    } else {
+        avatarBox.textContent = (name || "ES").substring(0, 2).toUpperCase();
+    }
+};
+
 window.initProfilePage = function() {
     const user = getCurrentUser();
+
     if (!user.email) {
         window.location.href = "index.html";
         return;
     }
 
     const name = getNamaUser(user);
+
     document.getElementById("profileName") && (document.getElementById("profileName").textContent = name);
-    document.getElementById("detailName") && (document.getElementById("detailName").textContent = name);
-    document.getElementById("profileRole") && (document.getElementById("profileRole").textContent = user.role.toUpperCase());
-    document.getElementById("detailEmail") && (document.getElementById("detailEmail").textContent = user.email);
-    document.getElementById("detailRole") && (document.getElementById("detailRole").textContent = user.role);
-    document.getElementById("avatarBox") && (document.getElementById("avatarBox").textContent = name.substring(0, 2).toUpperCase());
+    document.getElementById("profileRole") && (document.getElementById("profileRole").textContent = (user.role || "").toUpperCase());
+    document.getElementById("detailEmail") && (document.getElementById("detailEmail").textContent = user.email || "-");
+
+    document.getElementById("editNamaLengkap") && (document.getElementById("editNamaLengkap").value = name);
+    document.getElementById("editEmail") && (document.getElementById("editEmail").value = user.email || "");
+
+    renderAvatarProfil(name, user.foto_profile || "");
 };
 
-/* ==========================================================
-   10. GLOBAL INIT
-   ========================================================== */
-document.addEventListener('DOMContentLoaded', () => {
-    const path = window.location.pathname;
+window.resetFormProfil = function() {
+    const user = getCurrentUser();
+    const name = getNamaUser(user);
 
-    const halamanButuhLogin = [
-        'dashboard.html',
-        'kelas.html',
-        'materi.html',
-        'profil.html',
-        'quiz.html'
-    ];
+    if (document.getElementById("editNamaLengkap")) document.getElementById("editNamaLengkap").value = name;
+    if (document.getElementById("editEmail")) document.getElementById("editEmail").value = user.email || "";
+    if (document.getElementById("editFotoProfil")) document.getElementById("editFotoProfil").value = "";
+    if (document.getElementById("editPasswordBaru")) document.getElementById("editPasswordBaru").value = "";
+    if (document.getElementById("editKonfirmasiPassword")) document.getElementById("editKonfirmasiPassword").value = "";
+    if (document.getElementById("profileErrorMsg")) document.getElementById("profileErrorMsg").textContent = "";
 
-    const perluLogin = halamanButuhLogin.some(page => path.includes(page));
-    if (perluLogin && !getCurrentUser().email) {
-        window.location.href = 'index.html';
+    renderAvatarProfil(name, user.foto_profile || "");
+};
+
+window.simpanPerubahanProfil = async function() {
+    const currentUser = getCurrentUser();
+    const errorBox = document.getElementById("profileErrorMsg");
+    if (errorBox) errorBox.textContent = "";
+
+    if (!currentUser.email) {
+        window.location.href = "index.html";
         return;
     }
 
-    if (path.includes('dashboard.html')) initDashboard();
+    const namaBaru = document.getElementById("editNamaLengkap")?.value.trim();
+    const emailBaru = document.getElementById("editEmail")?.value.trim();
+    const fotoFile = document.getElementById("editFotoProfil")?.files?.[0] || null;
+    const passwordBaru = document.getElementById("editPasswordBaru")?.value || "";
+    const konfirmasiPassword = document.getElementById("editKonfirmasiPassword")?.value || "";
 
-    if (path.includes('kelas.html')) {
-        if (getUrlParam("tab") === "detail" && getUrlParam("kelas_id")) {
-            initDetailKelasPage();
-        } else {
-            initKelasPage();
+    if (!namaBaru || !emailBaru) {
+        if (errorBox) errorBox.textContent = "Nama dan email wajib diisi.";
+        return;
+    }
+
+    if (passwordBaru || konfirmasiPassword) {
+        if (passwordBaru !== konfirmasiPassword) {
+            if (errorBox) errorBox.textContent = "Konfirmasi password tidak cocok.";
+            return;
+        }
+
+        const passwordRegex = /^(?=.*[A-Z])(?=.*[0-9])(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/;
+        if (!passwordRegex.test(passwordBaru)) {
+            if (errorBox) errorBox.textContent = "Password wajib 8+ karakter, huruf besar, angka, dan simbol.";
+            return;
         }
     }
 
-    if (path.includes('materi.html')) initMateriPage();
-    if (path.includes('quiz.html')) initQuizPage();
-    if (path.includes('profil.html')) initProfilePage();
-});
+    try {
+        const userDoc = await findCurrentUserDoc();
+        if (!userDoc) {
+            if (errorBox) errorBox.textContent = "Data user tidak ditemukan.";
+            return;
+        }
+
+        const oldEmail = currentUser.email;
+        const oldName = getNamaUser(currentUser);
+        let fotoProfileBaru = currentUser.foto_profile || "";
+
+        if (fotoFile) {
+            const maxSize = 500 * 1024;
+            if (fotoFile.size > maxSize) {
+                if (errorBox) errorBox.textContent = "Ukuran foto maksimal 500 KB.";
+                return;
+            }
+
+            fotoProfileBaru = await readImageAsDataURL(fotoFile);
+        }
+
+        // Cek email baru apakah sudah dipakai user lain
+        if (emailBaru !== oldEmail) {
+            const emailCheck = await db.collection("users")
+                .where("email", "==", emailBaru)
+                .get();
+
+            const dipakaiUserLain = emailCheck.docs.some(doc => doc.id !== userDoc.id);
+            if (dipakaiUserLain) {
+                if (errorBox) errorBox.textContent = "Email sudah digunakan akun lain.";
+                return;
+            }
+        }
+
+        // update user utama
+        const updateUserData = {
+            nama_lengkap: namaBaru,
+            email: emailBaru,
+            foto_profile: fotoProfileBaru
+        };
+
+        if (passwordBaru) {
+            updateUserData.password = passwordBaru;
+        }
+
+        await db.collection("users").doc(userDoc.id).update(updateUserData);
+
+        // update data kelas milik guru
+        const kelasGuruSnap = await db.collection("kelas")
+            .where("guru_email", "==", oldEmail)
+            .get();
+
+        for (const doc of kelasGuruSnap.docs) {
+            await doc.ref.update({
+                guru_email: emailBaru,
+                guru_nama: namaBaru
+            });
+        }
+
+        // update data siswa_terdaftar di semua kelas
+        const semuaKelasSnap = await db.collection("kelas").get();
+        for (const doc of semuaKelasSnap.docs) {
+            const data = doc.data();
+            const siswa = data.siswa_terdaftar || [];
+            let berubah = false;
+
+            const siswaBaru = siswa.map((item) => {
+                if (item.email === oldEmail) {
+                    berubah = true;
+                    return {
+                        ...item,
+                        nama: namaBaru,
+                        email: emailBaru
+                    };
+                }
+                return item;
+            });
+
+            if (berubah) {
+                await doc.ref.update({
+                    siswa_terdaftar: siswaBaru
+                });
+            }
+        }
+
+        // update materi
+        const materiSnap = await db.collection("materi")
+            .where("email_pengunggah", "==", oldEmail)
+            .get();
+
+        for (const doc of materiSnap.docs) {
+            await doc.ref.update({
+                email_pengunggah: emailBaru,
+                nama_pengunggah: namaBaru
+            });
+        }
+
+        // update pengumuman
+        const pengumumanSnap = await db.collection("pengumuman")
+            .where("dibuat_oleh_email", "==", oldEmail)
+            .get();
+
+        for (const doc of pengumumanSnap.docs) {
+            await doc.ref.update({
+                dibuat_oleh_email: emailBaru,
+                dibuat_oleh_nama: namaBaru
+            });
+        }
+
+        // update jadwal
+        const jadwalSnap = await db.collection("jadwal")
+            .where("dibuat_oleh_email", "==", oldEmail)
+            .get();
+
+        for (const doc of jadwalSnap.docs) {
+            await doc.ref.update({
+                dibuat_oleh_email: emailBaru,
+                dibuat_oleh_nama: namaBaru
+            });
+        }
+
+        // update quiz pembuat
+        const quizPembuatSnap = await db.collection("quizzes")
+            .where("pembuat", "==", oldEmail)
+            .get();
+
+        for (const doc of quizPembuatSnap.docs) {
+            await doc.ref.update({
+                pembuat: emailBaru,
+                pembuat_nama: namaBaru
+            });
+        }
+
+        // update hasil_siswa di quiz
+        const semuaQuizSnap = await db.collection("quizzes").get();
+        for (const doc of semuaQuizSnap.docs) {
+            const data = doc.data();
+            const hasil = data.hasil_siswa || [];
+            let berubah = false;
+
+            const hasilBaru = hasil.map((item) => {
+                if (item.email === oldEmail) {
+                    berubah = true;
+                    return {
+                        ...item,
+                        nama: namaBaru,
+                        email: emailBaru
+                    };
+                }
+                return item;
+            });
+
+            if (berubah) {
+                await doc.ref.update({
+                    hasil_siswa: hasilBaru
+                });
+            }
+        }
+
+        // update localStorage
+        const userBaru = {
+            ...currentUser,
+            nama_lengkap: namaBaru,
+            email: emailBaru,
+            foto_profile: fotoProfileBaru
+        };
+
+        localStorage.setItem("edusmartUser", JSON.stringify(userBaru));
+
+        alert("Profil berhasil diperbarui.");
+        initProfilePage();
+        if (document.getElementById("editPasswordBaru")) document.getElementById("editPasswordBaru").value = "";
+        if (document.getElementById("editKonfirmasiPassword")) document.getElementById("editKonfirmasiPassword").value = "";
+        if (document.getElementById("editFotoProfil")) document.getElementById("editFotoProfil").value = "";
+    } catch (e) {
+        console.error("Gagal memperbarui profil:", e);
+        if (errorBox) errorBox.textContent = "Gagal memperbarui profil.";
+    }
+};
 
 /* ==========================================================
    11. DASHBOARD

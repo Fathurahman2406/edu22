@@ -12,9 +12,10 @@
       <div class="logo-circle">ES</div>
       <div>
         <div class="title">EduSmart</div>
-        <div class="subtle">Profil pengguna</div>
+        <div class="subtle">Halaman profil</div>
       </div>
     </div>
+
     <nav class="menu">
       <a href="dashboard.html" class="menu-btn">Dashboard</a>
       <a href="materi.html" class="menu-btn">Materi</a>
@@ -26,34 +27,74 @@
   </header>
 
   <main class="dashboard-container">
-    <section class="section-shell profile-layout">
-      <div class="profile-card">
-        <div class="avatar-box" id="avatarBox">ES</div>
-        <div class="profile-summary">
-          <h3 id="profileName">Pengguna EduSmart</h3>
-          <p id="profileRole">Role belum dipilih</p>
+    <section class="section-shell">
+      <div class="page-head">
+        <div>
+          <p class="eyebrow">PROFIL PENGGUNA</p>
+          <h1>Kelola Profil</h1>
+          <p>Ubah nama, email, dan foto profil Anda.</p>
         </div>
       </div>
 
-      <div class="profile-card">
-        <p class="eyebrow">Informasi akun</p>
-        <h3>Detail profil</h3>
-        <div class="data-row">
-          <strong>Nama</strong>
-          <span id="detailName">-</span>
-        </div>
-        <div class="data-row">
-          <strong>Email</strong>
-          <span id="detailEmail">-</span>
-        </div>
-        <div class="data-row">
-          <strong>Role</strong>
-          <span id="detailRole">-</span>
-        </div>
-        <div class="data-row">
-          <strong>Status akun</strong>
-          <span>Aktif dan siap digunakan</span>
-        </div>
+      <div class="feature-grid" style="grid-template-columns: 320px 1fr; gap: 24px;">
+        <!-- KARTU PROFIL -->
+        <article class="card-subject" style="text-align:center;">
+          <div id="avatarPreviewWrap" style="display:flex; justify-content:center; margin-bottom:16px;">
+            <div id="avatarBox" style="width:110px; height:110px; border-radius:50%; background:#eef3ff; color:#2c3e50; font-size:32px; font-weight:bold; display:flex; align-items:center; justify-content:center; overflow:hidden;">
+              ES
+            </div>
+          </div>
+
+          <h3 id="profileName">Nama Pengguna</h3>
+          <p id="profileRole">ROLE</p>
+          <p id="detailEmail">email@contoh.com</p>
+        </article>
+
+        <!-- FORM EDIT -->
+        <article class="card-subject">
+          <h3 style="margin-bottom:16px;">Edit Profil</h3>
+
+          <div class="form-group">
+            <label for="editNamaLengkap">Nama Lengkap</label>
+            <input type="text" id="editNamaLengkap" placeholder="Masukkan nama lengkap">
+          </div>
+
+          <div class="form-group">
+            <label for="editEmail">Email</label>
+            <input type="email" id="editEmail" placeholder="Masukkan email baru">
+          </div>
+
+          <div class="form-group">
+            <label for="editFotoProfil">Foto Profil</label>
+            <input type="file" id="editFotoProfil" accept=".jpg,.jpeg,.png,.webp">
+            <small style="display:block; margin-top:6px; opacity:.75;">
+              Disarankan gambar kecil, maksimal 500 KB.
+            </small>
+          </div>
+
+          <div class="form-group">
+            <label for="editPasswordBaru">Password Baru (Opsional)</label>
+            <div class="password-wrapper">
+              <input type="password" id="editPasswordBaru" placeholder="Kosongkan jika tidak ingin mengganti password">
+              <button class="toggle" type="button" onclick="togglePass('editPasswordBaru', this)">👁️</button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="editKonfirmasiPassword">Konfirmasi Password Baru</label>
+            <div class="password-wrapper">
+              <input type="password" id="editKonfirmasiPassword" placeholder="Ulangi password baru">
+              <button class="toggle" type="button" onclick="togglePass('editKonfirmasiPassword', this)">👁️</button>
+            </div>
+          </div>
+
+          <div id="profileErrorMsg" style="color:#e74c3c; min-height:1.2em; margin:10px 0;"></div>
+
+          <div class="card-footer-row" style="margin-top:18px; display:flex; gap:12px; flex-wrap:wrap;">
+            <button type="button" class="btn-buka" onclick="simpanPerubahanProfil()">Simpan Perubahan</button>
+            <button type="button" class="ghost-btn" onclick="resetFormProfil()">Reset</button>
+          </div>
+        </article>
       </div>
     </section>
   </main>
