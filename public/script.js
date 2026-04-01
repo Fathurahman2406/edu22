@@ -208,6 +208,7 @@ window.togglePass = function(id, btn) {
    ========================================================== */
 window.initKelasPage = async function() {
     const user = getCurrentUser();
+
     if (!user.email) {
         window.location.href = "index.html";
         return;
@@ -225,17 +226,27 @@ window.initKelasPage = async function() {
     if (siswaControls) siswaControls.style.display = isSiswa() ? "flex" : "none";
 
     await muatDaftarKelas();
+
+    if (isGuru()) {
+        tampilkanPlaceholderSiswa();
+    }
 };
 
 window.simpanKelasBaru = async function() {
-    if (!isGuru()) return alert("Hanya guru yang dapat membuat kelas.");
+    if (!isGuru()) {
+        alert("Hanya guru yang dapat membuat kelas.");
+        return;
+    }
 
     const user = getCurrentUser();
     const nama = document.getElementById('inputNamaKelas')?.value.trim();
     const aktif = document.getElementById('inputStatusKelas')?.checked ?? true;
     const kode = Math.random().toString(36).substring(2, 8).toUpperCase();
 
-    if (!nama) return alert("Nama kelas wajib diisi.");
+    if (!nama) {
+        alert("Nama kelas wajib diisi.");
+        return;
+    }
 
     try {
         await db.collection("kelas").add({
@@ -255,32 +266,44 @@ window.simpanKelasBaru = async function() {
         toggleModal('modalTambahKelas');
         muatDaftarKelas();
     } catch (e) {
-        console.error(e);
+        console.error("Gagal membuat kelas:", e);
         alert("Gagal membuat kelas.");
     }
 };
 
 window.gabungKeKelas = async function() {
-    if (!isSiswa()) return alert("Hanya siswa yang dapat bergabung ke kelas.");
+    if (!isSiswa()) {
+        alert("Hanya siswa yang dapat bergabung ke kelas.");
+        return;
+    }
 
     const user = getCurrentUser();
     const kodeInput = document.getElementById('inputKodeGabung')?.value.trim().toUpperCase();
 
-    if (!kodeInput) return alert("Masukkan kode kelas.");
+    if (!kodeInput) {
+        alert("Masukkan kode kelas.");
+        return;
+    }
 
     try {
         const snapshot = await db.collection("kelas")
             .where("kode_kelas", "==", kodeInput)
             .get();
 
-        if (snapshot.empty) return alert("Kode kelas tidak ditemukan.");
+        if (snapshot.empty) {
+            alert("Kode kelas tidak ditemukan.");
+            return;
+        }
 
         const doc = snapshot.docs[0];
         const data = doc.data();
         const siswa = data.siswa_terdaftar || [];
 
         const sudahGabung = siswa.some(item => item.email === user.email);
-        if (sudahGabung) return alert("Anda sudah tergabung di kelas ini.");
+        if (sudahGabung) {
+            alert("Anda sudah tergabung di kelas ini.");
+            return;
+        }
 
         siswa.push({
             nama: getNamaUser(user),
@@ -297,19 +320,24 @@ window.gabungKeKelas = async function() {
         }
         muatDaftarKelas();
     } catch (e) {
-        console.error(e);
+        console.error("Gagal gabung kelas:", e);
         alert("Gagal bergabung ke kelas.");
     }
 };
 
 window.muatDaftarKelas = async function() {
     const grid = document.getElementById("kelasGrid");
-    if (!grid) return;
+    if (!grid) {
+        console.error("kelasGrid tidak ditemukan di HTML");
+        return;
+    }
 
     const user = getCurrentUser();
 
     try {
-        const snapshot = await db.collection("kelas").orderBy("createdAt", "desc").get();
+        const snapshot = await db.collection("kelas").get();
+        console.log("Jumlah data kelas Firestore:", snapshot.size);
+
         grid.innerHTML = "";
 
         if (snapshot.empty) {
@@ -318,45 +346,57 @@ window.muatDaftarKelas = async function() {
                     <div class="subject-tag">BELUM ADA</div>
                     <h3>Belum ada kelas</h3>
                     <p>Kelas akan tampil di sini.</p>
-            
                 </article>
             `;
             return;
         }
 
+        let jumlahTampil = 0;
+
         snapshot.forEach((doc) => {
             const data = doc.data();
-            const isPemilik = isGuru() && user.email === data.guru_email;
             const siswa = data.siswa_terdaftar || [];
-            const ikut = siswa.some(item => item.email === user.email);
+
+            const isPemilik = isGuru() && user.email === data.guru_email;
+            const ikut = isSiswa() && siswa.some(item => item.email === user.email);
+
+            console.log("kelas:", data.nama_kelas, {
+                guru_email: data.guru_email,
+                user_email: user.email,
+                isPemilik,
+                ikut,
+                role: user.role
+            });
 
             if (isGuru() && !isPemilik) return;
             if (isSiswa() && !ikut) return;
 
+            jumlahTampil++;
+
             grid.innerHTML += `
                 <article class="card-subject">
                     <div class="subject-tag">${data.status_aktif ? 'KELAS AKTIF' : 'KELAS NONAKTIF'}</div>
-                    <h3>${escapeHtml(data.nama_kelas)}</h3>
-                    <p><strong>Kode:</strong> ${escapeHtml(data.kode_kelas)}</p>
-                    <p><strong>Guru:</strong> ${escapeHtml(data.guru_nama || '-')}</p>
+                    <h3>${escapeHtml(data.nama_kelas || "-")}</h3>
+                    <p><strong>Kode:</strong> ${escapeHtml(data.kode_kelas || "-")}</p>
+                    <p><strong>Guru:</strong> ${escapeHtml(data.guru_nama || "-")}</p>
                     <p><strong>Jumlah siswa:</strong> ${siswa.length}</p>
 
                     <div class="card-footer-row" style="margin-top:16px; display:flex; gap:10px; flex-wrap:wrap;">
                         <a href="materi.html?kelas_id=${doc.id}" class="btn-buka">Materi</a>
-                        <button class="btn-buka" onclick="lihatDetailKelas('${doc.id}')">Detail Kelas</button>
-                        ${isPemilik ? `<button class="ghost-btn" onclick="lihatSiswaKelas('${doc.id}')">Lihat Siswa</button>` : ''}
-                        ${isPemilik ? `<button class="ghost-btn" onclick="hapusKelas('${doc.id}')">Hapus</button>` : ''}
+                        <button type="button" class="btn-buka" onclick="lihatDetailKelas('${doc.id}')">Detail Kelas</button>
+                        ${isPemilik ? `<button type="button" class="ghost-btn" onclick="lihatSiswaKelas('${doc.id}')">Lihat Siswa</button>` : ""}
+                        ${isPemilik ? `<button type="button" class="ghost-btn" onclick="hapusKelas('${doc.id}')">Hapus</button>` : ""}
                     </div>
                 </article>
             `;
         });
 
-        if (grid.innerHTML.trim() === "") {
+        if (jumlahTampil === 0) {
             grid.innerHTML = `
                 <article class="card-subject">
                     <div class="subject-tag">INFO</div>
                     <h3>Tidak ada kelas</h3>
-                    <p>${isGuru() ? 'Anda belum membuat kelas.' : 'Anda belum tergabung ke kelas manapun.'}</p>
+                    <p>${isGuru() ? "Anda belum membuat kelas." : "Anda belum tergabung ke kelas manapun."}</p>
                 </article>
             `;
         }
@@ -366,14 +406,17 @@ window.muatDaftarKelas = async function() {
             <article class="card-subject">
                 <div class="subject-tag">ERROR</div>
                 <h3>Gagal memuat kelas</h3>
-                <p>Periksa koneksi atau konfigurasi Firebase.</p>
+                <p>${e.message || "Periksa koneksi atau konfigurasi Firebase."}</p>
             </article>
         `;
     }
 };
 
 window.hapusKelas = async function(id) {
-    if (!isGuru()) return alert("Hanya guru yang dapat menghapus kelas.");
+    if (!isGuru()) {
+        alert("Hanya guru yang dapat menghapus kelas.");
+        return;
+    }
 
     const konfirmasi = confirm("Yakin ingin menghapus kelas ini?");
     if (!konfirmasi) return;
@@ -383,99 +426,33 @@ window.hapusKelas = async function(id) {
         alert("Kelas berhasil dihapus.");
         muatDaftarKelas();
     } catch (e) {
-        console.error(e);
+        console.error("Gagal menghapus kelas:", e);
         alert("Gagal menghapus kelas.");
     }
 };
 
-window.lihatDetailKelas = function(id) {
-    window.location.href = `kelas.html?kelas_id=${id}&tab=detail`;
-};
+window.lihatDetailKelas = async function(id) {
+    window.kelasAktifId = id;
 
-window.lihatSiswaKelas = async function(kelasId) {
-    if (!isGuru()) {
-        alert("Hanya guru yang dapat melihat daftar siswa.");
-        return;
-    }
+    const mainSection = document.getElementById("kelasMainSection");
+    const detailSection = document.getElementById("detailKelasSection");
 
-    const container = document.getElementById("daftarSiswaKelas");
-    if (!container) return;
+    if (mainSection) mainSection.classList.add("hidden");
+    if (detailSection) detailSection.classList.remove("hidden");
 
-    try {
-        const doc = await db.collection("kelas").doc(kelasId).get();
+    await muatInfoKelas(id);
+    await muatPengumuman(id);
+    await muatJadwal(id);
 
-        if (!doc.exists) {
-            container.innerHTML = `<p>Kelas tidak ditemukan.</p>`;
-            toggleModal("modalSiswaKelas");
-            return;
-        }
-
-        const data = doc.data();
-        const siswa = data.siswa_terdaftar || [];
-        const user = getCurrentUser();
-
-        // pastikan hanya guru pemilik kelas yang bisa lihat
-        if (data.guru_email !== user.email) {
-            alert("Anda tidak memiliki akses ke daftar siswa kelas ini.");
-            return;
-        }
-
-        container.innerHTML = "";
-
-        if (!siswa.length) {
-            container.innerHTML = `
-                <article class="card-subject">
-                    <div class="subject-tag">BELUM ADA</div>
-                    <h3>Belum ada siswa</h3>
-                    <p>Belum ada siswa yang bergabung ke kelas ini.</p>
-                </article>
-            `;
-            toggleModal("modalSiswaKelas");
-            return;
-        }
-
-        siswa.forEach((item, index) => {
-            container.innerHTML += `
-                <article class="card-subject" style="margin-bottom:12px;">
-                    <div class="subject-tag">SISWA ${index + 1}</div>
-                    <h3>${escapeHtml(item.nama || "Tanpa Nama")}</h3>
-                    <p><strong>Email:</strong> ${escapeHtml(item.email || "-")}</p>
-                </article>
-            `;
-        });
-
-        toggleModal("modalSiswaKelas");
-    } catch (e) {
-        console.error("Gagal memuat daftar siswa:", e);
-        container.innerHTML = `<p>Gagal memuat daftar siswa.</p>`;
-        toggleModal("modalSiswaKelas");
-    }
+    const btnPengumuman = document.getElementById("btnTambahPengumuman");
+    const btnJadwal = document.getElementById("btnTambahJadwal");
+    if (btnPengumuman) btnPengumuman.style.display = isGuru() ? "inline-flex" : "none";
+    if (btnJadwal) btnJadwal.style.display = isGuru() ? "inline-flex" : "none";
 };
 
 /* ==========================================================
    6. DETAIL KELAS
    ========================================================== */
-window.initDetailKelasPage = async function() {
-    const user = getCurrentUser();
-    if (!user.email) {
-        window.location.href = "index.html";
-        return;
-    }
-
-    const kelasId = getUrlParam("kelas_id");
-    if (!kelasId) return;
-
-    await muatInfoKelas(kelasId);
-    await muatPengumuman(kelasId);
-    await muatJadwal(kelasId);
-
-    const pengumumanBtn = document.getElementById("btnTambahPengumuman");
-    const jadwalBtn = document.getElementById("btnTambahJadwal");
-
-    if (pengumumanBtn) pengumumanBtn.style.display = isGuru() ? "inline-flex" : "none";
-    if (jadwalBtn) jadwalBtn.style.display = isGuru() ? "inline-flex" : "none";
-};
-
 window.muatInfoKelas = async function(kelasId) {
     try {
         const doc = await db.collection("kelas").doc(kelasId).get();
@@ -486,22 +463,34 @@ window.muatInfoKelas = async function(kelasId) {
         const desc = document.getElementById("detailInfoKelas");
 
         if (title) title.textContent = data.nama_kelas || "Detail Kelas";
-        if (desc) desc.textContent = `Kode: ${data.kode_kelas} • Guru: ${data.guru_nama || '-'} • Status: ${data.status_aktif ? 'Aktif' : 'Nonaktif'}`;
+        if (desc) {
+            desc.textContent = `Kode: ${data.kode_kelas} • Guru: ${data.guru_nama || '-'} • Status: ${data.status_aktif ? 'Aktif' : 'Nonaktif'}`;
+        }
     } catch (e) {
         console.error("Gagal memuat info kelas:", e);
     }
 };
 
 window.simpanPengumumanBaru = async function() {
-    if (!isGuru()) return alert("Hanya guru yang dapat membuat pengumuman.");
+    if (!isGuru()) {
+        alert("Hanya guru yang dapat membuat pengumuman.");
+        return;
+    }
 
     const user = getCurrentUser();
-    const kelasId = getUrlParam("kelas_id");
+    const kelasId = getUrlParam("kelas_id") || window.kelasAktifId || null;
     const judul = document.getElementById("inputJudulPengumuman")?.value.trim();
     const isi = document.getElementById("inputIsiPengumuman")?.value.trim();
 
-    if (!kelasId) return alert("kelas_id tidak ditemukan.");
-    if (!judul || !isi) return alert("Judul dan isi pengumuman wajib diisi.");
+    if (!kelasId) {
+        alert("kelas_id tidak ditemukan.");
+        return;
+    }
+
+    if (!judul || !isi) {
+        alert("Judul dan isi pengumuman wajib diisi.");
+        return;
+    }
 
     try {
         await db.collection("pengumuman").add({
@@ -525,16 +514,26 @@ window.simpanPengumumanBaru = async function() {
 };
 
 window.simpanJadwalBaru = async function() {
-    if (!isGuru()) return alert("Hanya guru yang dapat membuat jadwal.");
+    if (!isGuru()) {
+        alert("Hanya guru yang dapat membuat jadwal.");
+        return;
+    }
 
     const user = getCurrentUser();
-    const kelasId = getUrlParam("kelas_id");
+    const kelasId = getUrlParam("kelas_id") || window.kelasAktifId || null;
     const hari = document.getElementById("inputHariJadwal")?.value.trim();
     const jam = document.getElementById("inputJamJadwal")?.value.trim();
     const kegiatan = document.getElementById("inputKegiatanJadwal")?.value.trim();
 
-    if (!kelasId) return alert("kelas_id tidak ditemukan.");
-    if (!hari || !jam || !kegiatan) return alert("Hari, jam, dan kegiatan wajib diisi.");
+    if (!kelasId) {
+        alert("kelas_id tidak ditemukan.");
+        return;
+    }
+
+    if (!hari || !jam || !kegiatan) {
+        alert("Hari, jam, dan kegiatan wajib diisi.");
+        return;
+    }
 
     try {
         await db.collection("jadwal").add({
@@ -583,7 +582,7 @@ window.muatPengumuman = async function(kelasId) {
 
         dataList.forEach((data) => {
             list.innerHTML += `
-                <article class="card-subject">
+                <article class="card-subject" style="margin-bottom:12px;">
                     <div class="subject-tag">PENGUMUMAN</div>
                     <h3>${escapeHtml(data.judul)}</h3>
                     <p>${escapeHtml(data.isi)}</p>
@@ -622,7 +621,7 @@ window.muatJadwal = async function(kelasId) {
 
         dataList.forEach((data) => {
             list.innerHTML += `
-                <article class="card-subject">
+                <article class="card-subject" style="margin-bottom:12px;">
                     <div class="subject-tag">${escapeHtml(data.hari)}</div>
                     <h3>${escapeHtml(data.jam)}</h3>
                     <p>${escapeHtml(data.kegiatan)}</p>
@@ -638,9 +637,10 @@ window.muatJadwal = async function(kelasId) {
 
 window.hapusPengumuman = async function(id) {
     if (!isGuru()) return;
+
     try {
         await db.collection("pengumuman").doc(id).delete();
-        await muatPengumuman(getUrlParam("kelas_id"));
+        await muatPengumuman(window.kelasAktifId);
     } catch (e) {
         console.error("Gagal menghapus pengumuman:", e);
         alert("Gagal menghapus pengumuman.");
@@ -649,12 +649,112 @@ window.hapusPengumuman = async function(id) {
 
 window.hapusJadwal = async function(id) {
     if (!isGuru()) return;
+
     try {
         await db.collection("jadwal").doc(id).delete();
-        await muatJadwal(getUrlParam("kelas_id"));
+        await muatJadwal(window.kelasAktifId);
     } catch (e) {
         console.error("Gagal menghapus jadwal:", e);
         alert("Gagal menghapus jadwal.");
+    }
+};
+
+/* ==========================================================
+   7. DAFTAR SISWA KELAS
+   ========================================================== */
+window.tampilkanPlaceholderSiswa = function() {
+    const section = document.getElementById("studentListSection");
+    const title = document.getElementById("studentSectionTitle");
+    const desc = document.getElementById("studentSectionDesc");
+    const grid = document.getElementById("studentListGrid");
+
+    if (section) section.classList.remove("hidden");
+    if (title) title.textContent = "Siswa Kelas";
+    if (desc) desc.textContent = "Pilih tombol “Lihat Siswa” pada kelas untuk melihat daftar siswa yang tergabung.";
+    if (grid) {
+        grid.innerHTML = `
+            <article class="card-subject">
+                <div class="subject-tag">INFO</div>
+                <h3>Belum memilih kelas</h3>
+                <p>Klik tombol “Lihat Siswa” pada salah satu kelas Anda.</p>
+            </article>
+        `;
+    }
+};
+
+window.lihatSiswaKelas = async function(kelasId) {
+    if (!isGuru()) {
+        alert("Hanya guru yang dapat melihat daftar siswa.");
+        return;
+    }
+
+    const section = document.getElementById("studentListSection");
+    const title = document.getElementById("studentSectionTitle");
+    const desc = document.getElementById("studentSectionDesc");
+    const grid = document.getElementById("studentListGrid");
+    const user = getCurrentUser();
+
+    if (!grid) return;
+
+    try {
+        const doc = await db.collection("kelas").doc(kelasId).get();
+
+        if (!doc.exists) {
+            grid.innerHTML = `
+                <article class="card-subject">
+                    <div class="subject-tag">ERROR</div>
+                    <h3>Kelas tidak ditemukan</h3>
+                    <p>Data kelas tidak tersedia.</p>
+                </article>
+            `;
+            if (section) section.classList.remove("hidden");
+            return;
+        }
+
+        const data = doc.data();
+        const siswa = data.siswa_terdaftar || [];
+
+        if (data.guru_email !== user.email) {
+            alert("Anda tidak memiliki akses ke daftar siswa kelas ini.");
+            return;
+        }
+
+        if (section) section.classList.remove("hidden");
+        if (title) title.textContent = `Daftar Siswa - ${data.nama_kelas || "Kelas"}`;
+        if (desc) desc.textContent = `Berikut siswa yang tergabung di kelas ${data.nama_kelas || "-"}.`;
+
+        grid.innerHTML = "";
+
+        if (!siswa.length) {
+            grid.innerHTML = `
+                <article class="card-subject">
+                    <div class="subject-tag">BELUM ADA</div>
+                    <h3>Belum ada siswa</h3>
+                    <p>Belum ada siswa yang bergabung ke kelas ini.</p>
+                </article>
+            `;
+            return;
+        }
+
+        siswa.forEach((item, index) => {
+            grid.innerHTML += `
+                <article class="card-subject">
+                    <div class="subject-tag">SISWA ${index + 1}</div>
+                    <h3>${escapeHtml(item.nama || "Tanpa Nama")}</h3>
+                    <p><strong>Email:</strong> ${escapeHtml(item.email || "-")}</p>
+                </article>
+            `;
+        });
+    } catch (e) {
+        console.error("Gagal memuat daftar siswa:", e);
+        grid.innerHTML = `
+            <article class="card-subject">
+                <div class="subject-tag">ERROR</div>
+                <h3>Gagal memuat daftar siswa</h3>
+                <p>Periksa koneksi atau konfigurasi Firebase.</p>
+            </article>
+        `;
+        if (section) section.classList.remove("hidden");
     }
 };
 
@@ -1073,7 +1173,7 @@ window.hapusMateri = async function(id) {
 };
 
 /* ==========================================================
-   8. LIVE QUIZ FINAL
+   8. LIVE QUIZ FINAL WITH DATE RANGE
    ========================================================== */
 
 window.loadKelasUntukQuiz = async function() {
@@ -1153,6 +1253,17 @@ window.formatDateTimeDisplay = function(value) {
     }
 };
 
+window.formatDateTimeLocalValue = function(value) {
+    if (!value) return "";
+    const date = value.toDate ? value.toDate() : new Date(value);
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, "0");
+    const dd = String(date.getDate()).padStart(2, "0");
+    const hh = String(date.getHours()).padStart(2, "0");
+    const mi = String(date.getMinutes()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+};
+
 window.getQuizStatus = function(quiz) {
     if (!quiz.quiz_aktif) return "belum_diaktifkan";
 
@@ -1161,10 +1272,12 @@ window.getQuizStatus = function(quiz) {
         ? quiz.jadwal_mulai.toMillis()
         : new Date(quiz.jadwal_mulai).getTime();
 
-    const endMs = startMs + ((quiz.durasi || 10) * 60 * 1000);
+    const endMs = quiz.jadwal_selesai?.toMillis
+        ? quiz.jadwal_selesai.toMillis()
+        : new Date(quiz.jadwal_selesai).getTime();
 
     if (now < startMs) return "menunggu_jadwal";
-    if (now >= startMs && now < endMs) return "aktif";
+    if (now >= startMs && now <= endMs) return "aktif";
     return "selesai";
 };
 
@@ -1275,13 +1388,15 @@ window.resetFormQuiz = function() {
     const title = document.getElementById("quizTitle");
     const kelasSelect = document.getElementById("quizKelasSelect");
     const duration = document.getElementById("quizDuration");
-    const schedule = document.getElementById("quizScheduleStart");
+    const scheduleStart = document.getElementById("quizScheduleStart");
+    const scheduleEnd = document.getElementById("quizScheduleEnd");
     const editId = document.getElementById("quizEditId");
 
     if (title) title.value = "";
     if (kelasSelect) kelasSelect.value = "";
     if (duration) duration.value = "";
-    if (schedule) schedule.value = "";
+    if (scheduleStart) scheduleStart.value = "";
+    if (scheduleEnd) scheduleEnd.value = "";
     if (editId) editId.value = "";
 
     resetFormSoalAktif();
@@ -1373,13 +1488,14 @@ window.simpanQuizBaru = async function() {
     }
 
     const editId = document.getElementById("quizEditId")?.value || "";
-    const judul = document.getElementById('quizTitle')?.value.trim();
-    const kelasId = document.getElementById('quizKelasSelect')?.value;
-    const durasi = parseInt(document.getElementById('quizDuration')?.value) || 10;
-    const jadwalMulaiRaw = document.getElementById('quizScheduleStart')?.value;
+    const judul = document.getElementById("quizTitle")?.value.trim();
+    const kelasId = document.getElementById("quizKelasSelect")?.value;
+    const durasi = parseInt(document.getElementById("quizDuration")?.value) || 10;
+    const jadwalMulaiRaw = document.getElementById("quizScheduleStart")?.value;
+    const jadwalSelesaiRaw = document.getElementById("quizScheduleEnd")?.value;
 
-    if (!judul || !kelasId || !jadwalMulaiRaw) {
-        alert("Judul quiz, kelas, dan jadwal mulai wajib diisi.");
+    if (!judul || !kelasId || !jadwalMulaiRaw || !jadwalSelesaiRaw) {
+        alert("Judul quiz, kelas, jadwal mulai, dan jadwal selesai wajib diisi.");
         return;
     }
 
@@ -1403,8 +1519,15 @@ window.simpanQuizBaru = async function() {
         }
 
         const jadwalMulaiDate = new Date(jadwalMulaiRaw);
-        if (Number.isNaN(jadwalMulaiDate.getTime())) {
-            alert("Jadwal mulai tidak valid.");
+        const jadwalSelesaiDate = new Date(jadwalSelesaiRaw);
+
+        if (Number.isNaN(jadwalMulaiDate.getTime()) || Number.isNaN(jadwalSelesaiDate.getTime())) {
+            alert("Jadwal quiz tidak valid.");
+            return;
+        }
+
+        if (jadwalMulaiDate >= jadwalSelesaiDate) {
+            alert("Jadwal selesai harus setelah jadwal mulai.");
             return;
         }
 
@@ -1433,6 +1556,7 @@ window.simpanQuizBaru = async function() {
                 kode_kelas: kelasData.kode_kelas || "",
                 durasi: durasi,
                 jadwal_mulai: jadwalMulaiDate,
+                jadwal_selesai: jadwalSelesaiDate,
                 pertanyaan: draftSoalQuiz
             });
 
@@ -1445,7 +1569,9 @@ window.simpanQuizBaru = async function() {
                 kode_kelas: kelasData.kode_kelas || "",
                 durasi: durasi,
                 jadwal_mulai: jadwalMulaiDate,
+                jadwal_selesai: jadwalSelesaiDate,
                 quiz_aktif: false,
+                diaktifkan_pada: null,
                 pembuat: user.email,
                 pembuat_nama: getNamaUser(user),
                 pertanyaan: draftSoalQuiz,
@@ -1494,23 +1620,14 @@ window.editQuiz = async function(id) {
         document.getElementById("quizTitle").value = data.judul_quiz || "";
         document.getElementById("quizKelasSelect").value = data.kelas_id || "";
         document.getElementById("quizDuration").value = data.durasi || 10;
-        document.getElementById("quizScheduleStart").value = data.jadwal_mulai
-            ? (() => {
-                const date = data.jadwal_mulai.toDate ? data.jadwal_mulai.toDate() : new Date(data.jadwal_mulai);
-                const yyyy = date.getFullYear();
-                const mm = String(date.getMonth() + 1).padStart(2, "0");
-                const dd = String(date.getDate()).padStart(2, "0");
-                const hh = String(date.getHours()).padStart(2, "0");
-                const mi = String(date.getMinutes()).padStart(2, "0");
-                return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
-            })()
-            : "";
+        document.getElementById("quizScheduleStart").value = formatDateTimeLocalValue(data.jadwal_mulai);
+        document.getElementById("quizScheduleEnd").value = formatDateTimeLocalValue(data.jadwal_selesai);
 
         draftSoalQuiz = Array.isArray(data.pertanyaan) ? [...data.pertanyaan] : [];
         renderPreviewSoal();
         resetFormSoalAktif();
 
-        document.getElementById("modalQuizTitle").textContent = "Edit Quiz";
+        document.getElementById("modalQuizTitle").textContent = "Edit / Reschedule Quiz";
         document.getElementById("btnSimpanQuiz").textContent = "Simpan Perubahan";
         toggleModal("modalQuiz");
     } catch (e) {
@@ -1520,52 +1637,7 @@ window.editQuiz = async function(id) {
 };
 
 window.rescheduleQuiz = async function(id) {
-    if (!isGuru()) return;
-
-    try {
-        const doc = await db.collection("quizzes").doc(id).get();
-        if (!doc.exists) {
-            alert("Quiz tidak ditemukan.");
-            return;
-        }
-
-        const data = doc.data();
-        const user = getCurrentUser();
-
-        if (data.pembuat !== user.email) {
-            alert("Anda tidak dapat mengubah jadwal quiz ini.");
-            return;
-        }
-
-        if (data.quiz_aktif) {
-            alert("Quiz yang sudah aktif tidak dapat di-reschedule.");
-            return;
-        }
-
-        const jadwalLama = data.jadwal_mulai
-            ? formatDateTimeDisplay(data.jadwal_mulai)
-            : "-";
-
-        const inputBaru = prompt(`Masukkan jadwal baru quiz.\nFormat: YYYY-MM-DDTHH:MM\nJadwal lama: ${jadwalLama}`);
-
-        if (!inputBaru) return;
-
-        const newDate = new Date(inputBaru);
-        if (Number.isNaN(newDate.getTime())) {
-            alert("Format jadwal tidak valid.");
-            return;
-        }
-
-        await db.collection("quizzes").doc(id).update({
-            jadwal_mulai: newDate
-        });
-
-        alert("Jadwal quiz berhasil diperbarui.");
-        muatDaftarQuiz();
-    } catch (e) {
-        console.error("Gagal reschedule quiz:", e);
-        alert("Gagal mengubah jadwal quiz.");
-    }
+    await editQuiz(id);
 };
 
 window.aktifkanQuiz = async function(id) {
@@ -1680,6 +1752,7 @@ window.muatDaftarQuiz = async function() {
                     <h3>${escapeHtml(data.judul_quiz || "-")}</h3>
                     <p><strong>Kelas:</strong> ${escapeHtml(data.kelas_nama || "-")}</p>
                     <p><strong>Mulai:</strong> ${formatDateTimeDisplay(data.jadwal_mulai)}</p>
+                    <p><strong>Selesai:</strong> ${formatDateTimeDisplay(data.jadwal_selesai)}</p>
                     <p><strong>Durasi:</strong> ${data.durasi || 10} menit</p>
                     <p><strong>Jumlah soal:</strong> ${jumlahSoal}</p>
 
@@ -1769,25 +1842,25 @@ window.mulaiQuiz = async function(id, fromResume = false) {
             return;
         }
 
-        const startMs = data.jadwal_mulai?.toMillis
-            ? data.jadwal_mulai.toMillis()
-            : new Date(data.jadwal_mulai).getTime();
-
-        const endMs = startMs + ((data.durasi || 10) * 60 * 1000);
+        const now = Date.now();
+        const jadwalSelesaiMs = data.jadwal_selesai?.toMillis
+            ? data.jadwal_selesai.toMillis()
+            : new Date(data.jadwal_selesai).getTime();
 
         let attemptState = getQuizAttemptState(id);
 
-        if (!attemptState || fromResume === false) {
-            if (!attemptState) {
-                attemptState = {
-                    quizId: id,
-                    startedAt: startMs,
-                    endAt: endMs,
-                    answers: {},
-                    submitted: false
-                };
-                saveQuizAttemptState(id, attemptState);
-            }
+        if (!attemptState) {
+            const batasDurasi = now + ((data.durasi || 10) * 60 * 1000);
+            const endAt = Math.min(batasDurasi, jadwalSelesaiMs);
+
+            attemptState = {
+                quizId: id,
+                startedAt: now,
+                endAt: endAt,
+                answers: {},
+                submitted: false
+            };
+            saveQuizAttemptState(id, attemptState);
         }
 
         if (Date.now() >= attemptState.endAt) {
@@ -1799,7 +1872,7 @@ window.mulaiQuiz = async function(id, fromResume = false) {
         workArea.classList.remove("hidden");
         quizActiveTitle.textContent = data.judul_quiz || "Quiz";
         if (quizActiveMeta) {
-            quizActiveMeta.textContent = `Kelas: ${data.kelas_nama || "-"} • Mulai: ${formatDateTimeDisplay(data.jadwal_mulai)}`;
+            quizActiveMeta.textContent = `Kelas: ${data.kelas_nama || "-"} • Akses: ${formatDateTimeDisplay(data.jadwal_mulai)} s/d ${formatDateTimeDisplay(data.jadwal_selesai)}`;
         }
 
         soalKonten.innerHTML = pertanyaan.map((soal, index) => `
@@ -1819,7 +1892,7 @@ window.mulaiQuiz = async function(id, fromResume = false) {
         clearInterval(quizTimer);
         quizTimer = setInterval(() => {
             const state = getQuizAttemptState(id);
-            const targetEnd = state?.endAt || endMs;
+            const targetEnd = state?.endAt || jadwalSelesaiMs;
             const sisaDetik = Math.max(0, Math.floor((targetEnd - Date.now()) / 1000));
 
             const menit = String(Math.floor(sisaDetik / 60)).padStart(2, '0');
@@ -2748,38 +2821,50 @@ window.lihatSiswaKelas = async function(kelasId) {
         }
 
         const data = doc.data();
-        const siswa = Array.isArray(data.siswa_terdaftar) ? data.siswa_terdaftar : [];
+        const siswa = data.siswa_terdaftar || [];
 
-        console.log("DATA SISWA:", siswa); // debug
+        const section = document.getElementById("studentListSection");
+        const grid = document.getElementById("studentListGrid");
+        const title = document.getElementById("studentSectionTitle");
+        const desc = document.getElementById("studentSectionDesc");
 
-        const container = document.getElementById("daftarSiswaKelas");
+        if (!section || !grid) return;
 
-        if (!container) {
-            console.error("Element daftarSiswaKelas tidak ada di HTML");
-            return;
-        }
+        // tampilkan section
+        section.classList.remove("hidden");
 
-        container.innerHTML = "";
+        // update judul
+        title.textContent = `Siswa Kelas: ${data.nama_kelas}`;
+        desc.textContent = `Total siswa: ${siswa.length}`;
+
+        grid.innerHTML = "";
 
         if (siswa.length === 0) {
-            container.innerHTML = `<p>Belum ada siswa yang bergabung.</p>`;
+            grid.innerHTML = `
+                <article class="card-subject">
+                    <div class="subject-tag">INFO</div>
+                    <h3>Belum ada siswa</h3>
+                    <p>Belum ada siswa yang bergabung.</p>
+                </article>
+            `;
             return;
         }
 
-        siswa.forEach((s, i) => {
-            container.innerHTML += `
-                <div class="card-siswa">
-                    <p><strong>${i + 1}. ${escapeHtml(s.nama || "-")}</strong></p>
-                    <p>${escapeHtml(s.email || "-")}</p>
-                </div>
+        siswa.forEach((s, index) => {
+            grid.innerHTML += `
+                <article class="card-subject">
+                    <div class="subject-tag">SISWA ${index + 1}</div>
+                    <h3>${escapeHtml(s.nama || s.name || "Tanpa Nama")}</h3>
+                    <p>${escapeHtml(s.email)}</p>
+                </article>
             `;
         });
 
-        // tampilkan modal / section
-        toggleModal("modalSiswaKelas");
+        // scroll ke bawah otomatis
+        section.scrollIntoView({ behavior: "smooth" });
 
     } catch (e) {
-        console.error("Gagal ambil siswa:", e);
-        alert("Gagal memuat data siswa");
+        console.error("Error lihat siswa:", e);
+        alert("Gagal memuat siswa");
     }
 };

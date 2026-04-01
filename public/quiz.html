@@ -45,7 +45,7 @@
         <div>
           <p class="eyebrow">LIVE QUIZ</p>
           <h1>Daftar Quiz Kelas</h1>
-          <p>Guru mengatur jadwal dan mengaktifkan quiz. Siswa hanya bisa masuk saat quiz aktif dan sesuai jadwal.</p>
+          <p>Guru mengatur jadwal mulai dan selesai. Siswa hanya bisa masuk saat quiz aktif dan berada dalam jadwal.</p>
         </div>
         <button class="ghost-btn" id="btnCreateQuiz" type="button">Buat Quiz</button>
       </div>
@@ -94,8 +94,13 @@
         </div>
 
         <div class="form-group">
+          <label for="quizScheduleEnd">Jadwal Selesai</label>
+          <input type="datetime-local" id="quizScheduleEnd">
+        </div>
+
+        <div class="form-group">
           <label for="quizDuration">Durasi (Menit)</label>
-          <input type="number" id="quizDuration" placeholder="Contoh: 15">
+          <input type="number" id="quizDuration" placeholder="Contoh: 30">
         </div>
 
         <hr style="margin:16px 0; border:none; border-top:1px solid #ddd;">
